@@ -1,6 +1,10 @@
-use bevy::{math::{quat, vec3}, prelude::*, sprite::MaterialMesh2dBundle};
-use bevy_xpbd_2d::{components::{AngularVelocity, Friction, LinearDamping, LinearVelocity, RigidBody}, plugins::{collision::Collider, PhysicsPlugins}};
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_cursor::prelude::*;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_xpbd_2d::{
+    components::{LinearVelocity, RigidBody},
+    plugins::PhysicsPlugins,
+};
 
 #[derive(Default, Component)]
 struct Player {
@@ -16,12 +20,23 @@ struct Dash {
 #[derive(Default, Component)]
 struct Direction(Vec2);
 
+const ACCELERATION: f32 = 6000.0;
+const DECCELERATION: f32 = 4000.0;
+const MAX_SPEED: f32 = 800.0;
+const DASH_SPEED: f32 = 2000.0;
+const DASH_DECELRATION: f32 = 200000.0;
+const DASH_DURATION: f32 = 0.1;
+
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, TrackCursorPlugin))
         .add_plugins(PhysicsPlugins::default())
+        .add_plugins(WorldInspectorPlugin::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (keyboard_input_system, look_cursor,applyforce, dash).chain())
+        .add_systems(
+            Update,
+            (keyboard_input_system, look_cursor, apply_force, dash).chain(),
+        )
         .run();
 }
 
@@ -38,11 +53,13 @@ fn setup(
         Direction(Vec2::default()),
         RigidBody::Kinematic,
         MaterialMesh2dBundle {
-            mesh: meshes.add(Triangle2d::new(
-                Vec2::new(0.5, 0.0),
-                Vec2::new(-0.5, -0.5),
-                Vec2::new(-0.5, 0.5),
-            )).into(),
+            mesh: meshes
+                .add(Triangle2d::new(
+                    Vec2::new(0.5, 0.0),
+                    Vec2::new(-0.5, -0.5),
+                    Vec2::new(-0.5, 0.5),
+                ))
+                .into(),
             transform: Transform::default().with_scale(Vec3::splat(64.)),
             material: materials.add(Color::PURPLE),
             ..default()
@@ -50,27 +67,14 @@ fn setup(
     ));
 }
 
-const ACCELERATION: f32 = 6000.0;
-const DECCELERATION: f32 = 4000.0;
-const MAX_SPEED: f32 = 800.0;
-
-fn look_cursor(
-    time: Res<Time>,
-    cursor: Res<CursorLocation>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query:  Query<&mut Transform, With<Player>>,
-) {
+fn look_cursor(cursor: Res<CursorLocation>, mut query: Query<&mut Transform, With<Player>>) {
     for mut transform in &mut query {
         if let Some(cursor_pos) = cursor.world_position() {
             let dir = cursor_pos - transform.translation.xy();
-            transform.rotation = Quat::from_axis_angle(vec3(0.0, 0.0, 1.0), dir.to_angle())
+            transform.rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), dir.to_angle())
         }
     }
 }
-
-const DASH_SPEED: f32 = 2000.0;
-const DASH_DECELRATION: f32 = 200000.0;
-const DASH_DURATION: f32 = 0.1;
 
 fn dash(
     time: Res<Time>,
@@ -97,24 +101,26 @@ fn dash(
                 }
             }
         }
-
     }
 }
 
 fn keyboard_input_system(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query:  Query<(&mut Player, &mut Direction)>,
+    mut query: Query<(&mut Player, &mut Direction)>,
 ) {
     for (mut player, mut direction) in &mut query {
         direction.0 = Vec2::ZERO;
         if keyboard_input.pressed(KeyCode::KeyA) {
             direction.0.x -= 1.0;
-        } if keyboard_input.pressed(KeyCode::KeyD) {
+        }
+        if keyboard_input.pressed(KeyCode::KeyD) {
             direction.0.x += 1.0;
-        } if keyboard_input.pressed(KeyCode::KeyW) {
+        }
+        if keyboard_input.pressed(KeyCode::KeyW) {
             direction.0.y += 1.0;
-        } if keyboard_input.pressed(KeyCode::KeyS) {
+        }
+        if keyboard_input.pressed(KeyCode::KeyS) {
             direction.0.y -= 1.0;
         }
 
@@ -132,11 +138,10 @@ fn keyboard_input_system(
         if player.speed.length() > MAX_SPEED {
             player.speed = player.speed.normalize_or_zero() * MAX_SPEED;
         }
-        
     }
 }
 
-fn applyforce(mut query:  Query<(&mut Player, &mut LinearVelocity, Option<& Dash>)>) {
+fn apply_force(mut query:  Query<(&mut Player, &mut LinearVelocity, Option<& Dash>)>) {
     for (player, mut velocity, dash) in &mut query {
         velocity.0 = player.speed;
         if let Some(dash) = dash {
@@ -144,3 +149,4 @@ fn applyforce(mut query:  Query<(&mut Player, &mut LinearVelocity, Option<& Dash
         }
     }
 }
+
