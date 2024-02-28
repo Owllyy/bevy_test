@@ -5,7 +5,12 @@ use bevy_cursor::prelude::*;
 #[derive(Default, Component)]
 struct Player {
     speed: Vec2,
-    dash_speed: Vec2,
+}
+
+#[derive(Default, Component)]
+struct Dash {
+    speed: Vec2,
+    duration: f32,
 }
 
 #[derive(Default, Component)]
@@ -29,7 +34,6 @@ fn setup(
     commands.spawn((
         Player {
             speed: Vec2::ZERO,
-            dash_speed: Vec2::ZERO,
         },
         Direction(Vec2::default()),
         RigidBody::Kinematic,
@@ -48,8 +52,6 @@ fn setup(
 
 const ACCELERATION: f32 = 6000.0;
 const DECCELERATION: f32 = 4000.0;
-const DASH_FORCE: f32 = 1000.0;
-const DASH_DECELRATION: f32 = 3000.0;
 const MAX_SPEED: f32 = 800.0;
 
 fn look_cursor(
@@ -66,20 +68,33 @@ fn look_cursor(
     }
 }
 
+const DASH_SPEED: f32 = 2000.0;
+const DASH_DECELRATION: f32 = 200000.0;
+const DASH_DURATION: f32 = 0.1;
+
 fn dash(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query:  Query<(&mut Player, &Direction)>,
+    mut command: Commands,
+    mut query:  Query<(Entity, &Direction, Option<&mut Dash>)>,
 ) {
-    for (mut player, dir) in &mut query {
-        if keyboard_input.just_pressed(KeyCode::Space) {
-            player.dash_speed = dir.0.normalize_or_zero() * DASH_FORCE;
-        } else {
-            let force = player.dash_speed.normalize_or_zero() * DASH_DECELRATION * time.delta_seconds();
-            if force.length() > player.dash_speed.length() {
-                player.dash_speed = Vec2::ZERO;
+    for (id, dir, dash) in &mut query {
+        if keyboard_input.just_pressed(KeyCode::Space) && dash.is_none() {
+            command.entity(id).insert(Dash {
+                speed: dir.0.normalize_or_zero() * DASH_SPEED,
+                duration: DASH_DURATION,
+            });
+        } else if let Some(mut dash) = dash {
+            if dash.duration > 0.0 {
+                dash.duration -= time.delta_seconds();
             } else {
-                player.dash_speed -= force;
+                let force = dash.speed.normalize_or_zero() * DASH_DECELRATION * time.delta_seconds();
+                if force.length() > dash.speed.length() {
+                    dash.speed = Vec2::ZERO;
+                    command.entity(id).remove::<Dash>();
+                } else {
+                    dash.speed -= force;
+                }
             }
         }
 
@@ -121,12 +136,11 @@ fn keyboard_input_system(
     }
 }
 
-fn applyforce(
-    time: Res<Time>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query:  Query<(&mut Player, &mut LinearVelocity)>) 
-{
-    for (player, mut velocity) in &mut query {
-        velocity.0 = player.speed + player.dash_speed; 
+fn applyforce(mut query:  Query<(&mut Player, &mut LinearVelocity, Option<& Dash>)>) {
+    for (player, mut velocity, dash) in &mut query {
+        velocity.0 = player.speed;
+        if let Some(dash) = dash {
+            velocity.0 += dash.speed;
+        }
     }
 }
