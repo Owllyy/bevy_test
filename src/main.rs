@@ -2,16 +2,16 @@ use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_cursor::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_xpbd_2d::{
-    components::{LinearVelocity, RigidBody},
-    plugins::PhysicsPlugins,
+    components::{LinearDamping, LinearVelocity, Mass, RigidBody},
+    plugins::{collision::Collider, PhysicsPlugins},
 };
 
-#[derive(Default, Component)]
+#[derive(Default, Component, Reflect)]
 struct Player {
     speed: Vec2,
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Component, Reflect)]
 struct Dash {
     speed: Vec2,
     duration: f32,
@@ -36,7 +36,7 @@ fn main() {
         .add_systems(
             Update,
             (keyboard_input_system, look_cursor, apply_force, dash).chain(),
-        )
+        ).register_type::<Player>()
         .run();
 }
 
@@ -52,6 +52,26 @@ fn setup(
         },
         Direction(Vec2::default()),
         RigidBody::Kinematic,
+        Collider::circle(0.5),
+        MaterialMesh2dBundle {
+            mesh: meshes
+                .add(Triangle2d::new(
+                    Vec2::new(0.5, 0.0),
+                    Vec2::new(-0.5, -0.5),
+                    Vec2::new(-0.5, 0.5),
+                ))
+                .into(),
+            transform: Transform::default().with_scale(Vec3::splat(64.)),
+            material: materials.add(Color::PURPLE),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        Direction(Vec2::default()),
+        RigidBody::Dynamic,
+        Collider::circle(2.0),
+        Mass(1000.0),
+        LinearDamping(1000.0),
         MaterialMesh2dBundle {
             mesh: meshes
                 .add(Triangle2d::new(
@@ -93,7 +113,7 @@ fn dash(
                 dash.duration -= time.delta_seconds();
             } else {
                 let force = dash.speed.normalize_or_zero() * DASH_DECELRATION * time.delta_seconds();
-                if force.length() > dash.speed.length() {
+                if force.length() >= dash.speed.length() {
                     dash.speed = Vec2::ZERO;
                     command.entity(id).remove::<Dash>();
                 } else {
