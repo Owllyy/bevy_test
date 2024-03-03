@@ -1,185 +1,169 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::{math::{vec2, vec3}, prelude::*, sprite::MaterialMesh2dBundle, window::WindowResolution};
 use bevy_cursor::prelude::*;
-use bevy_inspector_egui::{
-    inspector_options::ReflectInspectorOptions, quick::ResourceInspectorPlugin, InspectorOptions,
-};
 use bevy_xpbd_2d::{
-    components::{AngularDamping, CoefficientCombine, LinearDamping, LinearVelocity, Mass, RigidBody}, constraints::PenetrationConstraint, plugins::{
-        collision::{
-            contact_reporting::{Collision, CollisionStarted},
-            Collider,
-        }, solver::PenetrationConstraints, PhysicsDebugPlugin, PhysicsPlugins, SolverPlugin
-    }, resources::Gravity
+    components::{
+        AngularDamping, CoefficientCombine, LinearDamping, LinearVelocity, Mass, RigidBody,
+    },
+    plugins::{
+        collision::{contact_reporting::CollisionStarted, Collider},
+        PhysicsDebugPlugin, PhysicsPlugins,
+    },
+};
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
 };
 
-// pub struct OwnSolverPlugin;
-
-// impl Plugin for OwnSolverPlugin {
-//     fn build(&self, app: &mut App) {
-//         app.init_resource::<PenetrationConstraints>();
-
-//         let substeps = app
-//             .get_schedule_mut(SubstepSchedule)
-//             .expect("add SubstepSchedule first");
-
-//         substeps.add_systems(
-//             (
-//                 penetration_constraints,
-//                 solve_constraint::<FixedJoint, 2>,
-//                 solve_constraint::<RevoluteJoint, 2>,
-//                 solve_constraint::<SphericalJoint, 2>,
-//                 solve_constraint::<PrismaticJoint, 2>,
-//                 solve_constraint::<DistanceJoint, 2>,
-//             )
-//                 .chain()
-//                 .in_set(SubstepSet::SolveConstraints),
-//         );
-
-//         substeps.add_systems((update_lin_vel, update_ang_vel).in_set(SubstepSet::UpdateVelocities));
-
-//         substeps.add_systems(
-//             (
-//                 solve_vel,
-//                 joint_damping::<FixedJoint>,
-//                 joint_damping::<RevoluteJoint>,
-//                 joint_damping::<SphericalJoint>,
-//                 joint_damping::<PrismaticJoint>,
-//                 joint_damping::<DistanceJoint>,
-//             )
-//                 .chain()
-//                 .in_set(SubstepSet::SolveVelocities),
-//         );
-
-//         substeps.add_systems(store_contact_impulses.in_set(SubstepSet::StoreImpulses));
-
-//         substeps.add_systems(apply_translation.in_set(SubstepSet::ApplyTranslation));
-//     }
-// }
-
-#[derive(Default, Component, Reflect)]
-struct Player {
-    speed: Vec2,
-}
-
-#[derive(PartialEq, Default)]
+#[derive(PartialEq, Default, Copy, Clone, Component)]
 enum BallType {
-    #[default] GRAPE,
-    APPLE,
-    LEMON,
-    KAKI,
-    ORANGE,
+    #[default]
+    ONE,
+    TWO,
+    THREE,
+    FOUR,
+    FIVE,
+    SIX,
+    SEVEN,
+    EIGHT,
+    NINE
 }
 
 #[derive(Default, Component, PartialEq)]
 struct Ball(BallType);
-
-impl Ball {
+impl BallType {
     fn properties(&self) -> (f32, Color) {
-        match self.0 {
-            BallType::GRAPE => (50., Color::BLUE),
-            BallType::APPLE => (75., Color::RED),
-            BallType::LEMON => (100., Color::LIME_GREEN),
-            BallType::KAKI => (150., Color::BISQUE),
-            BallType::ORANGE => (200., Color::ORANGE),
+        match self {
+            BallType::ONE => (25., Color::BLUE),
+            BallType::TWO => (35., Color::RED),
+            BallType::THREE => (55., Color::LIME_GREEN),
+            BallType::FOUR => (75., Color::BISQUE),
+            BallType::FIVE => (100., Color::ORANGE),
+            BallType::SIX => (125., Color::VIOLET),
+            BallType::SEVEN => (150., Color::PINK),
+            BallType::EIGHT => (175., Color::GREEN),
+            BallType::NINE => (200., Color::GRAY),
         }
     }
 
     fn next(&self) -> Ball {
-        match self.0 {
-            BallType::GRAPE => Ball(BallType::APPLE),
-            BallType::APPLE => Ball(BallType::LEMON),
-            BallType::LEMON => Ball(BallType::KAKI),
-            BallType::KAKI => Ball(BallType::ORANGE),
-            BallType::ORANGE => Ball(BallType::GRAPE),
+        match self {
+            BallType::ONE => Ball(BallType::TWO),
+            BallType::TWO => Ball(BallType::THREE),
+            BallType::THREE => Ball(BallType::FOUR),
+            BallType::FOUR => Ball(BallType::FIVE),
+            BallType::FIVE => Ball(BallType::SIX),
+            BallType::SIX => Ball(BallType::SEVEN),
+            BallType::SEVEN => Ball(BallType::EIGHT),
+            BallType::EIGHT => Ball(BallType::NINE),
+            BallType::NINE => Ball(BallType::ONE),
         }
     }
 }
 
-#[derive(Default, Component, Reflect)]
-struct Dash {
-    speed: Vec2,
-    duration: f32,
-}
 
-#[derive(Default, Component)]
-struct Direction(Vec2);
+
+#[derive(Default, Component, PartialEq)]
+struct BallCursor;
+
+const NEXT_CURSOR_LOCATION: Vec2 = vec2(350., 350.);
+#[derive(Default, Component, PartialEq)]
+struct NextCursor;
 
 #[derive(Default, Bundle)]
-struct WallBundle {
-    rigid_body: RigidBody,
-    collider: Collider,
+struct CursorBundle {
+    balltype: BallType,
+    rigidbody: RigidBody,
     material: MaterialMesh2dBundle<ColorMaterial>,
 }
 
-impl WallBundle {
-    fn new(
-        rectangle: Rectangle,
-        position: Vec3,
-        color: Handle<ColorMaterial>,
+impl CursorBundle {
+    fn new(balltype: BallType,
         meshes: &mut Assets<Mesh>,
-    ) -> WallBundle {
-        WallBundle {
-            rigid_body: RigidBody::Static,
-            collider: Collider::rectangle(1., 1.),
+        materials: &mut ResMut<Assets<ColorMaterial>>,) -> Self {
+        Self {
+            balltype,
+            rigidbody: RigidBody::Kinematic,
             material: MaterialMesh2dBundle {
-                mesh: meshes.add(Rectangle::default()).into(),
+                mesh: meshes.add(Circle::default()).into(),
+                transform: Transform::from_translation(NEXT_CURSOR_LOCATION.extend(0.))
+                    .with_scale(Vec3::splat(balltype.properties().0)),
+                material: materials.add(balltype.properties().1),
+                ..default()
+            },
+        }
+    }
+
+    fn rand(
+        meshes: &mut Assets<Mesh>,
+        materials: &mut ResMut<Assets<ColorMaterial>>
+    ) -> Self {
+        let mut rng = rand::thread_rng();
+        let balltype = match rng.gen_range(0..=4) { // rand 0.8
+            0 => BallType::ONE,
+            1 => BallType::TWO,
+            2 => BallType::THREE,
+            3 => BallType::FOUR,
+            _ => BallType::FIVE,
+        };
+        CursorBundle::new(balltype, meshes, materials)
+    }
+}
+
+#[derive(Default, Bundle)]
+struct BallBundle {
+    ball: Ball,
+    rigid_body: RigidBody,
+    collider: Collider,
+    mass: Mass,
+    material: MaterialMesh2dBundle<ColorMaterial>,
+    linear_damping: LinearDamping,
+    angular_damping: AngularDamping,
+}
+
+impl BallBundle {
+    fn new(
+        position: Vec3,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut ResMut<Assets<ColorMaterial>>,
+        ball: Ball,
+    ) -> Self {
+        let properites = ball.0.properties();
+        Self {
+            ball,
+            rigid_body: RigidBody::Dynamic,
+            collider: Collider::circle(0.5),
+            mass: Mass(properites.0),
+            angular_damping: AngularDamping(20.),
+            linear_damping: LinearDamping(20.),
+            material: MaterialMesh2dBundle {
+                mesh: meshes.add(Circle::default()).into(),
                 transform: Transform::from_translation(position)
-                    .with_scale(rectangle.size().extend(1.)),
-                material: color,
+                    .with_scale(Vec3::splat(properites.0)),
+                material: materials.add(properites.1),
                 ..default()
             },
         }
     }
 }
 
-#[derive(Reflect, Resource, InspectorOptions)]
-#[reflect(Resource, InspectorOptions)]
-struct Configuration {
-    acceleration: f32,
-    decceleration: f32,
-    max_speed: f32,
-    dash_speed: f32,
-    dash_decelration: f32,
-    dash_duration: f32,
-}
-
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            acceleration: 6000.0,
-            decceleration: 4000.0,
-            max_speed: 800.0,
-            dash_speed: 2000.0,
-            dash_decelration: 200000.0,
-            dash_duration: 0.1,
-        }
-    }
-}
-
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, TrackCursorPlugin))
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                position: WindowPosition::Centered(MonitorSelection::Current),
+                resolution: WindowResolution::new(800.0, 800.0),
+                resizable: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+        .add_plugins(TrackCursorPlugin)
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(PhysicsDebugPlugin::default())
         // .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
-        // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
-        .init_resource::<Configuration>()
-        // .insert_resource(Gravity(Vec2::NEG_Y * 800.0))
+        // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default()
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                keyboard_input_system,
-                look_cursor,
-                apply_force,
-                dash,
-                spawn_ball,
-                fusion,
-                gravity,
-            )
-                .chain(),
-        )
-        .register_type::<Player>()
+        .add_systems(Update, (spawn_ball, fusion, gravity, cursor_tracking).chain())
         .run();
 }
 
@@ -189,39 +173,37 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands.spawn(Camera2dBundle::default());
-    // commands.spawn((
-    //     Player { speed: Vec2::ZERO },
-    //     Direction(Vec2::default()),
-    //     AngularDamping(100.),
-    //     RigidBody::Dynamic,
-    //     Collider::triangle(
-    //         Vec2::new(-0.5, -0.5),
-    //         Vec2::new(0.5, 0.0),
-    //         Vec2::new(-0.5, 0.5),
-    //     ),
-    //     MaterialMesh2dBundle {
-    //         mesh: meshes
-    //             .add(Triangle2d::new(
-    //                 Vec2::new(0.5, 0.0),
-    //                 Vec2::new(-0.5, -0.5),
-    //                 Vec2::new(-0.5, 0.5),
-    //             ))
-    //             .into(),
-    //         transform: Transform::default().with_scale(Vec3::splat(64.)),
-    //         material: materials.add(Color::PURPLE),
-    //         ..default()
-    //     },
-    // ));
+    //next cursor
+    commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), NextCursor));
+    //ball cursor
+    commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), BallCursor));
 }
 
-const GRAVITY_FORCE: f32 = 10000.0;
+const CURSOR_ORBIT: f32 = 350.0;
+const TRACKING_SPEED: f32 = 8.0;
 
-fn gravity(
-mut query: Query<(&mut LinearVelocity, &Transform), With<Ball>>) {
-    for  (mut velocity, trasform) in &mut query {
+fn cursor_tracking(
+    time: Res<Time>,
+    cursor: Res<CursorLocation>,
+    mut query: Query<&mut Transform, With<BallCursor>>,
+) {
+    if let Some(cursor) = cursor.world_position() {
+        for mut transform in &mut query {
+            transform.translation = (transform.translation
+                + (cursor.extend(0.) * time.delta_seconds() * TRACKING_SPEED))
+                .normalize_or_zero()
+                * ((CURSOR_ORBIT + transform.translation.length() * 4.) / 5.);
+        }
+    }
+}
+
+const GRAVITY_FORCE: f32 = 100.0;
+
+fn gravity(mut query: Query<(&mut LinearVelocity, &Transform), With<Ball>>) {
+    for (mut velocity, trasform) in &mut query {
         let mut dir = Vec3::default() - trasform.translation;
-        if dir.length() > 5. {
-            dir = dir.normalize_or_zero() * GRAVITY_FORCE / dir.length();
+        if dir.length() > 20. {
+            dir = dir.normalize_or_zero() * GRAVITY_FORCE;
             velocity.0 += dir.xy();
         }
     }
@@ -230,30 +212,20 @@ mut query: Query<(&mut LinearVelocity, &Transform), With<Ball>>) {
 fn fusion(
     mut commands: Commands,
     mut collision_event_reader: EventReader<CollisionStarted>,
-    mut query: Query<(&mut Ball, &mut Transform)>,
+    query: Query<(&mut Ball, &mut Transform)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     for &CollisionStarted(e1, e2) in collision_event_reader.read() {
-        if let (Ok((ball1, trasnform1)), Ok((ball2, trasnform2))) = (query.get(e1), query.get(e2)) {
+        if let (Ok((ball1, trasnform1)), Ok((ball2, transform2))) = (query.get(e1), query.get(e2)) {
             if ball1 == ball2 {
                 commands.entity(e1).despawn();
                 commands.entity(e2).despawn();
-                let properties = ball1.next().properties();
-                commands.spawn((
-                    ball1.next(),
-                    RigidBody::Dynamic,
-                    CoefficientCombine::Min,
-                    Collider::circle(0.5),
-                    AngularDamping(20.),
-                    LinearDamping(20.),
-                    MaterialMesh2dBundle {
-                        mesh: meshes.add(Circle::default()).into(),
-                        transform: Transform::from_translation(trasnform1.translation)
-                            .with_scale(Vec3::splat(properties.0)),
-                        material: materials.add(properties.1),
-                        ..default()
-                    },
+                commands.spawn(BallBundle::new(
+                    (trasnform1.translation + transform2.translation) / 2.,
+                    &mut meshes,
+                    &mut materials,
+                    ball1.0.next(),
                 ));
             }
         }
@@ -264,153 +236,27 @@ fn spawn_ball(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    cursor: Res<CursorLocation>,
     buttons: Res<ButtonInput<MouseButton>>,
+    cursor: Query<(Entity, &mut Transform, &BallType), With<BallCursor>>,
+    next_cursor: Query<Entity, With<NextCursor>>,
 ) {
     if buttons.just_pressed(MouseButton::Left) {
-        if let Some(cursor_pos) = cursor.world_position() {
-            let ball = Ball::default();
-            commands.spawn((
-                ball,
-                RigidBody::Dynamic,
-                Collider::circle(0.5),
-                AngularDamping(20.),
-                LinearDamping(20.),
-                MaterialMesh2dBundle {
-                    mesh: meshes.add(Circle::default()).into(),
-                    transform: Transform::from_translation(Vec3::new(cursor_pos.x, 300., 0.))
-                        .with_scale(Vec3::splat(Ball::default().properties().0)),
-                    material: materials.add(Ball::default().properties().1),
-                    ..default()
-                },
+        if let Ok((current, cursor, balltype)) = cursor.get_single() {
+            commands.spawn(BallBundle::new(
+                cursor.translation,
+                &mut meshes,
+                &mut materials,
+                Ball(*balltype),
             ));
-        }
-    }
-}
 
-fn wall_e(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    commands.spawn((WallBundle::new(
-        Rectangle::new(20., 850.),
-        Vec3 {
-            x: -600.,
-            y: 0.,
-            z: 0.0,
-        },
-        materials.add(Color::PURPLE),
-        &mut meshes,
-    ),));
-    commands.spawn((WallBundle::new(
-        Rectangle::new(20., 850.),
-        Vec3 {
-            x: 600.,
-            y: 0.,
-            z: 0.0,
-        },
-        materials.add(Color::PURPLE),
-        &mut meshes,
-    ),));
-    commands.spawn((WallBundle::new(
-        Rectangle::new(1200., 20.),
-        Vec3 {
-            x: 0.,
-            y: -350.,
-            z: 0.0,
-        },
-        materials.add(Color::PURPLE),
-        &mut meshes,
-    ),));
-}
+            commands.entity(current).despawn();
 
-fn look_cursor(cursor: Res<CursorLocation>, mut query: Query<&mut Transform, With<Player>>) {
-    for mut transform in &mut query {
-        if let Some(cursor_pos) = cursor.world_position() {
-            let dir = cursor_pos - transform.translation.xy();
-            transform.rotation = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), dir.to_angle())
-        }
-    }
-}
+            if let Ok((entity)) = next_cursor.get_single() {
+                commands.entity(entity).insert(BallCursor);
+                commands.entity(entity).remove::<NextCursor>();
 
-fn dash(
-    time: Res<Time>,
-    configurition: Res<Configuration>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut command: Commands,
-    mut query: Query<(Entity, &Direction, Option<&mut Dash>)>,
-) {
-    for (id, dir, dash) in &mut query {
-        if keyboard_input.just_pressed(KeyCode::Space) && dash.is_none() {
-            command.entity(id).insert(Dash {
-                speed: dir.0.normalize_or_zero() * configurition.dash_speed,
-                duration: configurition.dash_duration,
-            });
-        } else if let Some(mut dash) = dash {
-            if dash.duration > 0.0 {
-                dash.duration -= time.delta_seconds();
-            } else {
-                let force = dash.speed.normalize_or_zero()
-                    * configurition.dash_decelration
-                    * time.delta_seconds();
-                if force.length() >= dash.speed.length() {
-                    dash.speed = Vec2::ZERO;
-                    command.entity(id).remove::<Dash>();
-                } else {
-                    dash.speed -= force;
-                }
-            }
-        }
-    }
-}
-
-fn keyboard_input_system(
-    time: Res<Time>,
-    configurition: Res<Configuration>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut Player, &mut Direction)>,
-) {
-    for (mut player, mut direction) in &mut query {
-        direction.0 = Vec2::ZERO;
-        if keyboard_input.pressed(KeyCode::KeyA) {
-            direction.0.x -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::KeyD) {
-            direction.0.x += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::KeyW) {
-            direction.0.y += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::KeyS) {
-            direction.0.y -= 1.0;
-        }
-
-        if direction.0 != Vec2::ZERO {
-            player.speed +=
-                direction.0.normalize_or_zero() * configurition.acceleration * time.delta_seconds();
-        } else {
-            let force = player.speed.normalize_or_zero()
-                * configurition.decceleration
-                * time.delta_seconds();
-            if force.length() > player.speed.length() {
-                player.speed = Vec2::ZERO;
-            } else {
-                player.speed -= force;
-            }
-        }
-
-        if player.speed.length() > configurition.max_speed {
-            player.speed = player.speed.normalize_or_zero() * configurition.max_speed;
-        }
-    }
-}
-
-fn apply_force(mut query: Query<(&mut Player, &mut LinearVelocity, Option<&Dash>)>) {
-    for (player, mut velocity, dash) in &mut query {
-        velocity.0 = player.speed;
-        if let Some(dash) = dash {
-            velocity.0 += dash.speed;
+                commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), NextCursor));
+            }   
         }
     }
 }
