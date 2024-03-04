@@ -1,66 +1,46 @@
-use bevy::{math::{vec2, vec3}, prelude::*, sprite::MaterialMesh2dBundle, window::WindowResolution};
+use bevy::{
+    math::{vec2, vec3},
+    prelude::*,
+    sprite::MaterialMesh2dBundle,
+    window::WindowResolution,
+};
 use bevy_cursor::prelude::*;
+mod planet;
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
+use planet::{fusion, Ball, BallBundle, BallType};
+mod score;
 use bevy_xpbd_2d::{
     components::{
-        AngularDamping, CoefficientCombine, LinearDamping, LinearVelocity, Mass, RigidBody,
+        AngularDamping, CoefficientCombine, GravityScale, LinearDamping, LinearVelocity, Mass,
+        RigidBody,
     },
     plugins::{
         collision::{contact_reporting::CollisionStarted, Collider},
         PhysicsDebugPlugin, PhysicsPlugins,
     },
+    resources::Gravity,
+    PhysicsSchedule,
 };
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
+use score::{score_update, Score, ScoreBundle};
 
-#[derive(PartialEq, Default, Copy, Clone, Component)]
-enum BallType {
-    #[default]
-    ONE,
-    TWO,
-    THREE,
-    FOUR,
-    FIVE,
-    SIX,
-    SEVEN,
-    EIGHT,
-    NINE
+#[derive(Resource, Reflect)]
+struct Configuration {
+    gravity_scale: f32,
+    gravity_distance: f32,
 }
 
-#[derive(Default, Component, PartialEq)]
-struct Ball(BallType);
-impl BallType {
-    fn properties(&self) -> (f32, Color) {
-        match self {
-            BallType::ONE => (25., Color::BLUE),
-            BallType::TWO => (35., Color::RED),
-            BallType::THREE => (55., Color::LIME_GREEN),
-            BallType::FOUR => (75., Color::BISQUE),
-            BallType::FIVE => (100., Color::ORANGE),
-            BallType::SIX => (125., Color::VIOLET),
-            BallType::SEVEN => (150., Color::PINK),
-            BallType::EIGHT => (175., Color::GREEN),
-            BallType::NINE => (200., Color::GRAY),
-        }
-    }
-
-    fn next(&self) -> Ball {
-        match self {
-            BallType::ONE => Ball(BallType::TWO),
-            BallType::TWO => Ball(BallType::THREE),
-            BallType::THREE => Ball(BallType::FOUR),
-            BallType::FOUR => Ball(BallType::FIVE),
-            BallType::FIVE => Ball(BallType::SIX),
-            BallType::SIX => Ball(BallType::SEVEN),
-            BallType::SEVEN => Ball(BallType::EIGHT),
-            BallType::EIGHT => Ball(BallType::NINE),
-            BallType::NINE => Ball(BallType::ONE),
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            gravity_scale: 1.,
+            gravity_distance: -1.,
         }
     }
 }
-
-
 
 #[derive(Default, Component, PartialEq)]
 struct BallCursor;
@@ -73,21 +53,28 @@ struct NextCursor;
 struct CursorBundle {
     balltype: BallType,
     rigidbody: RigidBody,
-    material: MaterialMesh2dBundle<ColorMaterial>,
+    texture: SpriteBundle,
 }
 
 impl CursorBundle {
-    fn new(balltype: BallType,
+    fn new(
+        balltype: BallType,
         meshes: &mut Assets<Mesh>,
-        materials: &mut ResMut<Assets<ColorMaterial>>,) -> Self {
+        materials: &mut ResMut<Assets<ColorMaterial>>,
+        asset_server: &mut Res<AssetServer>,
+    ) -> Self {
+        let properties = balltype.properties();
         Self {
             balltype,
             rigidbody: RigidBody::Kinematic,
-            material: MaterialMesh2dBundle {
-                mesh: meshes.add(Circle::default()).into(),
+            texture: SpriteBundle {
+                texture: asset_server.load(properties.1),
                 transform: Transform::from_translation(NEXT_CURSOR_LOCATION.extend(0.))
-                    .with_scale(Vec3::splat(balltype.properties().0)),
-                material: materials.add(balltype.properties().1),
+                    .with_scale(Vec3::splat(properties.0)),
+                sprite: Sprite {
+                    custom_size: Some(vec2(1., 1.)),
+                    ..Default::default()
+                },
                 ..default()
             },
         }
@@ -95,75 +82,50 @@ impl CursorBundle {
 
     fn rand(
         meshes: &mut Assets<Mesh>,
-        materials: &mut ResMut<Assets<ColorMaterial>>
+        materials: &mut ResMut<Assets<ColorMaterial>>,
+        asset_server: &mut Res<AssetServer>,
     ) -> Self {
         let mut rng = rand::thread_rng();
-        let balltype = match rng.gen_range(0..=4) { // rand 0.8
+        let balltype = match rng.gen_range(0..=4) {
+            // rand 0.8
             0 => BallType::ONE,
             1 => BallType::TWO,
             2 => BallType::THREE,
             3 => BallType::FOUR,
             _ => BallType::FIVE,
         };
-        CursorBundle::new(balltype, meshes, materials)
-    }
-}
-
-#[derive(Default, Bundle)]
-struct BallBundle {
-    ball: Ball,
-    rigid_body: RigidBody,
-    collider: Collider,
-    mass: Mass,
-    material: MaterialMesh2dBundle<ColorMaterial>,
-    linear_damping: LinearDamping,
-    angular_damping: AngularDamping,
-}
-
-impl BallBundle {
-    fn new(
-        position: Vec3,
-        meshes: &mut Assets<Mesh>,
-        materials: &mut ResMut<Assets<ColorMaterial>>,
-        ball: Ball,
-    ) -> Self {
-        let properites = ball.0.properties();
-        Self {
-            ball,
-            rigid_body: RigidBody::Dynamic,
-            collider: Collider::circle(0.5),
-            mass: Mass(properites.0),
-            angular_damping: AngularDamping(20.),
-            linear_damping: LinearDamping(20.),
-            material: MaterialMesh2dBundle {
-                mesh: meshes.add(Circle::default()).into(),
-                transform: Transform::from_translation(position)
-                    .with_scale(Vec3::splat(properites.0)),
-                material: materials.add(properites.1),
-                ..default()
-            },
-        }
+        CursorBundle::new(balltype, meshes, materials, asset_server)
     }
 }
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                position: WindowPosition::Centered(MonitorSelection::Current),
-                resolution: WindowResolution::new(800.0, 800.0),
-                resizable: false,
-                ..Default::default()
-            }),
-            ..Default::default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        position: WindowPosition::Centered(MonitorSelection::Current),
+                        resolution: WindowResolution::new(800.0, 800.0),
+                        resizable: false,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .set(ImagePlugin::default_nearest()),
+        )
         .add_plugins(TrackCursorPlugin)
         .add_plugins(PhysicsPlugins::default())
-        .add_plugins(PhysicsDebugPlugin::default())
-        // .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
+        .insert_resource(Gravity(Vec2::default()))
+        .insert_resource(Configuration::default())
+        .register_type::<Configuration>()
+        // .add_plugins(PhysicsDebugPlugin::default())
+        .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
         // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default()
         .add_systems(Startup, setup)
-        .add_systems(Update, (spawn_ball, fusion, gravity, cursor_tracking).chain())
+        .add_systems(
+            Update,
+            (spawn_ball, fusion, gravity, cursor_tracking, score_update).chain(),
+        )
         .run();
 }
 
@@ -171,12 +133,21 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut asset_server: Res<AssetServer>,
 ) {
     commands.spawn(Camera2dBundle::default());
     //next cursor
-    commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), NextCursor));
+    commands.spawn((
+        CursorBundle::rand(&mut meshes, &mut materials, &mut asset_server),
+        NextCursor,
+    ));
     //ball cursor
-    commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), BallCursor));
+    commands.spawn((
+        CursorBundle::rand(&mut meshes, &mut materials, &mut asset_server),
+        BallCursor,
+    ));
+
+    commands.spawn(ScoreBundle::default());
 }
 
 const CURSOR_ORBIT: f32 = 350.0;
@@ -199,35 +170,22 @@ fn cursor_tracking(
 
 const GRAVITY_FORCE: f32 = 100.0;
 
-fn gravity(mut query: Query<(&mut LinearVelocity, &Transform), With<Ball>>) {
+fn gravity(
+    time: Res<Time>,
+    mut query: Query<(&mut LinearVelocity, &Transform), With<Ball>>,
+    configuration: Res<Configuration>,
+) {
     for (mut velocity, trasform) in &mut query {
         let mut dir = Vec3::default() - trasform.translation;
+        // if dir.length() > 20. {
+        //     dir = dir.normalize_or_zero() * GRAVITY_FORCE;
+        //     velocity.0 += dir.xy();
+        // }
         if dir.length() > 20. {
-            dir = dir.normalize_or_zero() * GRAVITY_FORCE;
-            velocity.0 += dir.xy();
-        }
-    }
-}
-
-fn fusion(
-    mut commands: Commands,
-    mut collision_event_reader: EventReader<CollisionStarted>,
-    query: Query<(&mut Ball, &mut Transform)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    for &CollisionStarted(e1, e2) in collision_event_reader.read() {
-        if let (Ok((ball1, trasnform1)), Ok((ball2, transform2))) = (query.get(e1), query.get(e2)) {
-            if ball1 == ball2 {
-                commands.entity(e1).despawn();
-                commands.entity(e2).despawn();
-                commands.spawn(BallBundle::new(
-                    (trasnform1.translation + transform2.translation) / 2.,
-                    &mut meshes,
-                    &mut materials,
-                    ball1.0.next(),
-                ));
-            }
+        velocity.0 += dir.normalize_or_zero().xy()
+            * ((dir.length_squared() * configuration.gravity_scale).exp()
+            * configuration.gravity_distance
+            * time.delta_seconds());
         }
     }
 }
@@ -239,6 +197,8 @@ fn spawn_ball(
     buttons: Res<ButtonInput<MouseButton>>,
     cursor: Query<(Entity, &mut Transform, &BallType), With<BallCursor>>,
     next_cursor: Query<Entity, With<NextCursor>>,
+    mut score: Query<&mut Score>,
+    mut asset_server: Res<AssetServer>,
 ) {
     if buttons.just_pressed(MouseButton::Left) {
         if let Ok((current, cursor, balltype)) = cursor.get_single() {
@@ -246,8 +206,13 @@ fn spawn_ball(
                 cursor.translation,
                 &mut meshes,
                 &mut materials,
+                &mut asset_server,
                 Ball(*balltype),
             ));
+
+            if let Ok(mut score) = score.get_single_mut() {
+                score.0 += balltype.properties().2;
+            }
 
             commands.entity(current).despawn();
 
@@ -255,8 +220,11 @@ fn spawn_ball(
                 commands.entity(entity).insert(BallCursor);
                 commands.entity(entity).remove::<NextCursor>();
 
-                commands.spawn((CursorBundle::rand(&mut meshes, &mut materials), NextCursor));
-            }   
+                commands.spawn((
+                    CursorBundle::rand(&mut meshes, &mut materials, &mut asset_server),
+                    NextCursor,
+                ));
+            }
         }
     }
 }
