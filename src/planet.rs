@@ -27,9 +27,9 @@ impl BallBundle {
             ball,
             rigid_body: RigidBody::Dynamic,
             restitution: Restitution::new(0.0),
-            collider: Collider::circle(0.5),
+            collider: Collider::circle(0.53),
             mass: Mass(properites.properties().0),
-            angular_damping: AngularDamping(2000.),
+            angular_damping: AngularDamping(20000.),
             linear_damping: LinearDamping(20.),
             texture: SpriteBundle {
                 texture: asset_server.load(properites.properties().1.clone()),
@@ -66,17 +66,17 @@ pub struct Ball(pub BallType);
 impl BallType {
     pub fn properties(&self) -> (f32, String, u64) {
         match self {
-            BallType::ONE => (25., "planet1.png".to_string(), 1),
-            BallType::TWO => (35., "planet2.png".to_string(), 2),
-            BallType::THREE => (55., "planet3.png".to_string(), 4),
-            BallType::FOUR => (75., "planet4.png".to_string(), 8),
-            BallType::FIVE => (100., "planet5.png".to_string(), 16),
-            BallType::SIX => (125., "planet6.png".to_string(), 32),
-            BallType::SEVEN => (150., "planet7.png".to_string(), 64),
-            BallType::EIGHT => (175., "planet8.png".to_string(), 128),
-            BallType::NINE => (200., "planet9.png".to_string(), 258),
-            BallType::TEN => (225., "planet10.png".to_string(), 512),
-            BallType::ELEVEN => (250., "planet11.png".to_string(), 1024),
+            BallType::ONE => (25., "moon.png".to_string(), 1),
+            BallType::TWO => (35., "earth.png".to_string(), 2),
+            BallType::THREE => (55., "mars.png".to_string(), 4),
+            BallType::FOUR => (75., "snow.png".to_string(), 8),
+            BallType::FIVE => (100., "toxic.png".to_string(), 16),
+            BallType::SIX => (125., "lava.png".to_string(), 32),
+            BallType::SEVEN => (150., "milk.png".to_string(), 64),
+            BallType::EIGHT => (175., "green.png".to_string(), 128),
+            BallType::NINE => (200., "emma.png".to_string(), 258),
+            BallType::TEN => (225., "sand.png".to_string(), 512),
+            BallType::ELEVEN => (250., "sun.png".to_string(), 1024),
         }
     }
 

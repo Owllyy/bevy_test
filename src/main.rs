@@ -37,7 +37,7 @@ impl Default for Configuration {
     fn default() -> Self {
         Self {
             gravity_scale: 1.,
-            gravity_distance: -1.,
+            gravity_distance: 1000.,
         }
     }
 }
@@ -129,6 +129,7 @@ fn main() {
         .run();
 }
 
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -168,7 +169,7 @@ fn cursor_tracking(
     }
 }
 
-const GRAVITY_FORCE: f32 = 100.0;
+const GRAVITY_FORCE: f32 = 200.0;
 
 fn gravity(
     time: Res<Time>,
@@ -177,16 +178,13 @@ fn gravity(
 ) {
     for (mut velocity, trasform) in &mut query {
         let mut dir = Vec3::default() - trasform.translation;
+            dir = dir * GRAVITY_FORCE * time.delta_seconds();
+            velocity.0 = dir.xy();
         // if dir.length() > 20. {
-        //     dir = dir.normalize_or_zero() * GRAVITY_FORCE;
-        //     velocity.0 += dir.xy();
+        // velocity.0 += dir.normalize_or_zero().xy()
+        //     * configuration.gravity_distance
+        //     * time.delta_seconds();
         // }
-        if dir.length() > 20. {
-        velocity.0 += dir.normalize_or_zero().xy()
-            * ((dir.length_squared() * configuration.gravity_scale).exp()
-            * configuration.gravity_distance
-            * time.delta_seconds());
-        }
     }
 }
 
