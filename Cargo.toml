@@ -12,6 +12,10 @@ bevy_cursor = { version = "0.3.0", features = ["2d"] }
 bevy_xpbd_2d = "0.4.2"
 rand = "0.8.5"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { version = "0.13.0", features = ["dynamic_linking","wayland"] }
+
+
 [profile.dev]
 opt-level = 1
 

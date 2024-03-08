@@ -135,7 +135,7 @@ fn main() {
         .insert_resource(Configuration::default())
         .register_type::<Configuration>()
         // .add_plugins(PhysicsDebugPlugin::default())
-        .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
+        // .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
         // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default()
         .add_systems(Startup, setup)
         .add_systems(
@@ -193,8 +193,13 @@ fn cursor_cooldown(
 fn game_over(
     mut commands: Commands,
     mut status: Query<Entity, With<Playing>>,
+    mut cooldown: Query<(), With<CursorCooldown>>,
     query: Query<&mut Transform, With<Ball>>,
 ) {
+    // wait for the fall of the planet
+    if cooldown.get_single().is_ok() {
+        return ;
+    }
     if let Ok(playing) = status.get_single_mut() {
         for ball in query.iter() {
             if ball.translation.length() > 400. {
