@@ -42,6 +42,22 @@ impl Default for Configuration {
     }
 }
 
+#[derive(Component)]
+struct Playing;
+
+#[derive(Component)]
+struct CursorCooldown(f32);
+
+impl Default for CursorCooldown {
+    fn default() -> Self {
+        Self(0.5)
+    }
+}
+
+#[derive(Component)]
+struct GameOver;
+
+
 #[derive(Default, Component, PartialEq)]
 struct BallCursor;
 
@@ -124,7 +140,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (spawn_ball, fusion, gravity, cursor_tracking, score_update).chain(),
+            (spawn_ball, fusion, gravity, cursor_tracking, score_update, game_over, cursor_cooldown).chain(),
         )
         .run();
 }
@@ -137,6 +153,11 @@ fn setup(
     mut asset_server: Res<AssetServer>,
 ) {
     commands.spawn(Camera2dBundle::default());
+    commands.spawn(SpriteBundle{
+        texture: asset_server.load("background.png"),
+        transform: Transform::default().with_translation(vec3(0., 0., -10.)).with_scale(vec3(0.7, 0.7, 1.)),
+        ..Default::default()
+    });
     //next cursor
     commands.spawn((
         CursorBundle::rand(&mut meshes, &mut materials, &mut asset_server),
@@ -149,10 +170,40 @@ fn setup(
     ));
 
     commands.spawn(ScoreBundle::default());
+    commands.spawn(Playing);
 }
 
 const CURSOR_ORBIT: f32 = 350.0;
 const TRACKING_SPEED: f32 = 8.0;
+
+fn cursor_cooldown(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut cooldown: Query<(Entity, &mut CursorCooldown)>,
+) {
+    if let Ok((entity, mut cooldown)) = cooldown.get_single_mut() {
+        if cooldown.0 > 0. {
+            cooldown.0 -= time.delta_seconds();
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn game_over(
+    mut commands: Commands,
+    mut status: Query<Entity, With<Playing>>,
+    query: Query<&mut Transform, With<Ball>>,
+) {
+    if let Ok(playing) = status.get_single_mut() {
+        for ball in query.iter() {
+            if ball.translation.length() > 400. {
+                commands.entity(playing).despawn();
+                commands.spawn(GameOver);
+            }
+        }
+    }
+}
 
 fn cursor_tracking(
     time: Res<Time>,
@@ -197,23 +248,34 @@ fn spawn_ball(
     next_cursor: Query<Entity, With<NextCursor>>,
     mut score: Query<&mut Score>,
     mut asset_server: Res<AssetServer>,
+    mut status: Query<(), With<Playing>>,
+    mut cooldown: Query<(), With<CursorCooldown>>,
 ) {
+    if status.get_single().is_err() || cooldown.get_single().is_ok() {
+        return;
+    }
     if buttons.just_pressed(MouseButton::Left) {
         if let Ok((current, cursor, balltype)) = cursor.get_single() {
+            // Spawn Ball from BallCursor
             commands.spawn(BallBundle::new(
                 cursor.translation,
-                &mut meshes,
                 &mut materials,
                 &mut asset_server,
                 Ball(*balltype),
             ));
 
+            // Set cursor cooldown
+            commands.spawn(CursorCooldown::default());
+
+            // Add score todo remove from here
             if let Ok(mut score) = score.get_single_mut() {
                 score.0 += balltype.properties().2;
             }
 
+            // Despawn curent cursor
             commands.entity(current).despawn();
 
+            // Switch NextCursor to BallCursor & spawn a new rand NextCursor
             if let Ok((entity)) = next_cursor.get_single() {
                 commands.entity(entity).insert(BallCursor);
                 commands.entity(entity).remove::<NextCursor>();

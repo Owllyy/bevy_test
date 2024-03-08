@@ -2,7 +2,7 @@ use bevy::{math::vec2, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_xpbd_2d::prelude::*;
 
 
-#[derive(Default, Bundle)]
+#[derive(Bundle)]
 pub struct BallBundle {
     pub ball: Ball,
     pub rigid_body: RigidBody,
@@ -17,7 +17,6 @@ pub struct BallBundle {
 impl BallBundle {
     pub fn new(
         position: Vec3,
-        meshes: &mut Assets<Mesh>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
         asset_server: &mut Res<AssetServer>,
         ball: Ball,
@@ -101,7 +100,6 @@ pub fn fusion(
     mut commands: Commands,
     mut collision_event_reader: EventReader<CollisionStarted>,
     query: Query<(&mut Ball, &mut Transform)>,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut asset_server: Res<AssetServer>,
 ) {
@@ -112,7 +110,6 @@ pub fn fusion(
                 commands.entity(e2).despawn();
                 commands.spawn(BallBundle::new(
                     (trasnform1.translation + transform2.translation) / 2.,
-                    &mut meshes,
                     &mut materials,
                     &mut asset_server,
                     ball1.0.next(),

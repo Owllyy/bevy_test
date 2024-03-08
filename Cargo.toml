@@ -1,12 +1,12 @@
 [package]
-name = "bevy_test"
+name = "SpaceMerge"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.13.0", features = ["dynamic_linking", "wayland"] }
+bevy = { version = "0.13.0", features = ["wayland"] }
 bevy-inspector-egui = "0.23.2"
 bevy_cursor = { version = "0.3.0", features = ["2d"] }
 bevy_xpbd_2d = "0.4.2"
