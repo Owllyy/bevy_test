@@ -1,6 +1,8 @@
 use bevy::{math::vec2, prelude::*, sprite::MaterialMesh2dBundle};
 use bevy_xpbd_2d::prelude::*;
 
+use crate::score::Score;
+
 
 #[derive(Bundle)]
 pub struct BallBundle {
@@ -101,6 +103,7 @@ pub fn fusion(
     mut collision_event_reader: EventReader<CollisionStarted>,
     query: Query<(&mut Ball, &mut Transform)>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut score: Query<&mut Score>,
     mut asset_server: Res<AssetServer>,
 ) {
     for &CollisionStarted(e1, e2) in collision_event_reader.read() {
@@ -108,12 +111,19 @@ pub fn fusion(
             if ball1 == ball2 {
                 commands.entity(e1).despawn();
                 commands.entity(e2).despawn();
-                commands.spawn(BallBundle::new(
+                let next_ball = BallBundle::new(
                     (trasnform1.translation + transform2.translation) / 2.,
                     &mut materials,
                     &mut asset_server,
                     ball1.0.next(),
-                ));
+                );
+
+                // Add score todo remove from here
+                if let Ok(mut score) = score.get_single_mut() {
+                    score.0 += next_ball.ball.0.properties().2;
+                }
+
+                commands.spawn(next_ball);
             }
         }
     }
