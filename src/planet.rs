@@ -1,8 +1,58 @@
-use bevy::{math::vec2, prelude::*, sprite::MaterialMesh2dBundle};
-use bevy_xpbd_2d::prelude::*;
+use std::borrow::BorrowMut;
 
-use crate::score::Score;
+use bevy::{math::{vec2, vec3}, prelude::*, scene::ron::de::Position, sprite::MaterialMesh2dBundle};
+use bevy_rapier2d::prelude::*;
 
+use crate::{cursor::CursorCooldown, score::Score, BallCursor, CursorBundle, NextCursor};
+
+const ANIMATION_SPEED: f32 = 0.15;
+
+#[derive(Component)]
+pub struct Growing(f32);
+impl Default for Growing {
+    fn default() -> Self {
+        Self(ANIMATION_SPEED)
+    }
+}
+
+pub fn growing(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut balls: Query<(Entity, &mut Transform, &mut RigidBody, &mut Growing, &Ball), Without<Fusion>>,) {
+    for (ball, mut transform, mut body, mut timer, size) in balls.iter_mut() {
+        if timer.0 > 0. {
+            timer.0 -= time.delta_seconds();
+            let size = 1. * (ANIMATION_SPEED - timer.0) / ANIMATION_SPEED * size.0.properties().0;
+            transform.scale = vec3(size, size, 1.)
+        } else {
+            let size = size.0.properties().0;
+            *body = RigidBody::Dynamic;
+            transform.scale = vec3(size, size, 1.);
+            commands.entity(ball).remove::<Growing>();
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct Fusion(f32);
+impl Default for Fusion {
+    fn default() -> Self {
+        Self(ANIMATION_SPEED)
+    }
+}
+
+pub fn fusioning(
+time: Res<Time>,
+mut commands: Commands,
+mut balls: Query<(Entity, &mut Fusion)>,) {
+    for (ball, mut timer) in balls.iter_mut() {
+        if timer.0 > 0. {
+            timer.0 -= time.delta_seconds();
+        } else {
+            commands.entity(ball).despawn();
+        }
+    }
+}
 
 #[derive(Bundle)]
 pub struct BallBundle {
@@ -10,16 +60,18 @@ pub struct BallBundle {
     pub rigid_body: RigidBody,
     pub restitution: Restitution,
     pub collider: Collider,
-    pub mass: Mass,
+    pub mass: AdditionalMassProperties,
     pub texture: SpriteBundle,
-    pub linear_damping: LinearDamping,
-    pub angular_damping: AngularDamping,
+    pub velocity: Velocity,
+    pub damping: Damping,
+    pub gravity: ExternalForce,
+    pub collision: ActiveEvents,
+    pub friction: Friction,
 }
 
 impl BallBundle {
     pub fn new(
         position: Vec3,
-        materials: &mut ResMut<Assets<ColorMaterial>>,
         asset_server: &mut Res<AssetServer>,
         ball: Ball,
     ) -> Self {
@@ -27,15 +79,53 @@ impl BallBundle {
         Self {
             ball,
             rigid_body: RigidBody::Dynamic,
-            restitution: Restitution::new(0.0),
-            collider: Collider::circle(0.53),
-            mass: Mass(properites.properties().0),
-            angular_damping: AngularDamping(20000.),
-            linear_damping: LinearDamping(20.),
+            gravity: ExternalForce::default(),
+            friction: Friction::new(1.0),
+            restitution: Restitution::new(0.1),
+            collider: Collider::ball(0.53),
+            collision: ActiveEvents::COLLISION_EVENTS,
+            velocity: Velocity::default(),
+            mass: AdditionalMassProperties::Mass(150.),
+            damping: Damping {
+                linear_damping: 50.,
+                angular_damping: 50000.,
+            },
             texture: SpriteBundle {
                 texture: asset_server.load(properites.properties().1.clone()),
                 transform: Transform::from_translation(position)
                         .with_scale(Vec3::splat(properites.properties().0)),
+                sprite: Sprite {
+                    custom_size: Some(vec2(1., 1.)),
+                    ..Default::default()
+                },
+                ..default()
+            },
+        }
+    }
+    pub fn growing(
+        position: Vec3,
+        asset_server: &mut Res<AssetServer>,
+        ball: Ball,
+    ) -> Self {
+        let properites = ball.0;
+        Self {
+            ball,
+            rigid_body: RigidBody::KinematicVelocityBased,
+            gravity: ExternalForce::default(),
+            friction: Friction::new(1.0),
+            restitution: Restitution::new(0.1),
+            collider: Collider::ball(0.53),
+            collision: ActiveEvents::COLLISION_EVENTS,
+            velocity: Velocity::default(),
+            mass: AdditionalMassProperties::Mass(150.),
+            damping: Damping {
+                linear_damping: 50.,
+                angular_damping: 50000.,
+            },
+            texture: SpriteBundle {
+                texture: asset_server.load(properites.properties().1.clone()),
+                transform: Transform::from_translation(position)
+                        .with_scale(Vec3::splat(0.)),
                 sprite: Sprite {
                     custom_size: Some(vec2(1., 1.)),
                     ..Default::default()
@@ -67,17 +157,17 @@ pub struct Ball(pub BallType);
 impl BallType {
     pub fn properties(&self) -> (f32, String, u64) {
         match self {
-            BallType::ONE => (25., "moon.png".to_string(), 1),
-            BallType::TWO => (35., "earth.png".to_string(), 2),
-            BallType::THREE => (55., "mars.png".to_string(), 4),
-            BallType::FOUR => (75., "snow.png".to_string(), 8),
-            BallType::FIVE => (100., "toxic.png".to_string(), 16),
-            BallType::SIX => (125., "lava.png".to_string(), 32),
-            BallType::SEVEN => (150., "milk.png".to_string(), 64),
-            BallType::EIGHT => (175., "green.png".to_string(), 128),
-            BallType::NINE => (200., "emma.png".to_string(), 258),
-            BallType::TEN => (225., "sand.png".to_string(), 512),
-            BallType::ELEVEN => (250., "sun.png".to_string(), 1024),
+            BallType::ONE => (40., "moon.png".to_string(), 1),
+            BallType::TWO => (50., "earth.png".to_string(), 2),
+            BallType::THREE => (60., "mars.png".to_string(), 4),
+            BallType::FOUR => (90., "snow.png".to_string(), 8),
+            BallType::FIVE => (110., "toxic.png".to_string(), 16),
+            BallType::SIX => (130., "lava.png".to_string(), 32),
+            BallType::SEVEN => (160., "milk.png".to_string(), 64),
+            BallType::EIGHT => (190., "green.png".to_string(), 128),
+            BallType::NINE => (220., "emma.png".to_string(), 258),
+            BallType::TEN => (250., "sand.png".to_string(), 512),
+            BallType::ELEVEN => (280., "sun.png".to_string(), 1024),
         }
     }
 
@@ -100,30 +190,118 @@ impl BallType {
 
 pub fn fusion(
     mut commands: Commands,
-    mut collision_event_reader: EventReader<CollisionStarted>,
-    query: Query<(&mut Ball, &mut Transform)>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut collision_event_reader: EventReader<CollisionEvent>,
+    mut balls: Query<(&mut Ball, &mut Transform, &mut Velocity), Without<Fusion>>,
     mut score: Query<&mut Score>,
     mut asset_server: Res<AssetServer>,
 ) {
-    for &CollisionStarted(e1, e2) in collision_event_reader.read() {
-        if let (Ok((ball1, trasnform1)), Ok((ball2, transform2))) = (query.get(e1), query.get(e2)) {
-            if ball1 == ball2 {
-                commands.entity(e1).despawn();
-                commands.entity(e2).despawn();
-                let next_ball = BallBundle::new(
-                    (trasnform1.translation + transform2.translation) / 2.,
-                    &mut materials,
-                    &mut asset_server,
-                    ball1.0.next(),
-                );
+    let mut already_fusionned: Vec<Entity> = vec![];
 
-                // Add score todo remove from here
-                if let Ok(mut score) = score.get_single_mut() {
-                    score.0 += next_ball.ball.0.properties().2;
+    for event in collision_event_reader.read() {
+        if let CollisionEvent::Started(e1, e2, flag) = event {
+            if let Ok([(ball1, transform1, mut velocity1), (ball2, transform2, mut velocity2)]) = balls.get_many_mut([*e1, *e2]) {
+                if ball1.0 == ball2.0 && !already_fusionned.contains(e1) && !already_fusionned.contains(e2) {
+                    commands.entity(*e1).insert(Fusion::default());
+                    commands.entity(*e2).insert(Fusion::default());
+                    commands.entity(*e1).insert(RigidBody::KinematicVelocityBased);
+                    commands.entity(*e2).insert(RigidBody::KinematicVelocityBased);
+                    already_fusionned.push(*e1);
+                    already_fusionned.push(*e2);
+                    let mut position = (transform1.translation + transform2.translation) / 2.;
+                    position.z = transform1.translation.z + transform2.translation.z + 1.;
+                    velocity2.linvel = (transform1.translation.xy() - transform2.translation.xy());
+                    velocity1.linvel = (transform2.translation.xy() - transform1.translation.xy());
+                    let next_ball = (BallBundle::growing(
+                        position,
+                        &mut asset_server,
+                        ball1.0.next(),
+                    ), Growing::default());
+
+                    // Add score todo remove from here
+                    if let Ok(mut score) = score.get_single_mut() {
+                        score.score += next_ball.0.ball.0.properties().2;
+                    }
+
+                    commands.spawn(next_ball);
                 }
+            }
+        } else {
+            continue;
+        }
 
-                commands.spawn(next_ball);
+    }
+}
+
+
+// pub fn repulsion(
+//     mut collision_event_reader: EventReader<CollisionEvent>,
+//     mut balls: Query<(& Transform, &mut ExternalForce), With<Ball>>,
+// ) {
+//     for event in collision_event_reader.read() {
+//         if let CollisionEvent::Started(e1, e2, _) = event {
+//             if let Ok([(transform1, mut force1), (transform2, mut force2)]) = balls.get_many_mut([*e1, *e2]) {
+//                 let dir = transform1.translation - transform2.translation;
+//                 force1.force = dir.xy() * 10000.;
+//                 force2.force = dir.xy() * -1. * 10000.;
+//             }
+//         }
+//     }
+// }
+
+const GRAVITY_FORCE: f32 = 15000.0;
+
+pub fn gravity(
+    mut query: Query<(&mut ExternalForce, &Transform), With<Ball>>,
+) {
+    for (mut gravity, trasform) in &mut query {
+        let mut dir = Vec3::default() - trasform.translation;
+        gravity.force = dir.xy() * GRAVITY_FORCE;
+    }
+}
+
+pub fn spawn_ball(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    cursor: Query<(Entity, &mut Transform, &BallType), With<BallCursor>>,
+    next_cursor: Query<Entity, With<NextCursor>>,
+    mut score: Query<&mut Score>,
+    cooldown: Query<(), With<CursorCooldown>>,
+    mut asset_server: Res<AssetServer>,
+) {
+    if cooldown.get_single().is_ok() {
+        return ;
+    }
+    if buttons.just_pressed(MouseButton::Left) {
+        if let Ok((current, cursor, balltype)) = cursor.get_single() {
+            // Set cursor cooldown
+            commands.spawn(CursorCooldown::default());
+
+            // Spawn Ball from BallCursor
+            commands.spawn(BallBundle::new(
+                cursor.translation,
+                &mut asset_server,
+                Ball(*balltype),
+            ));
+
+            // Add score todo remove from here
+            if let Ok(mut score) = score.get_single_mut() {
+                score.score += balltype.properties().2;
+            }
+
+            // Despawn curent cursor
+            commands.entity(current).despawn();
+
+            // Switch NextCursor to BallCursor & spawn a new rand NextCursor
+            if let Ok((entity)) = next_cursor.get_single() {
+                commands.entity(entity).insert(BallCursor);
+                commands.entity(entity).remove::<NextCursor>();
+
+                commands.spawn((
+                    CursorBundle::rand(&mut meshes, &mut materials, &mut asset_server),
+                    NextCursor,
+                ));
             }
         }
     }

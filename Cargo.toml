@@ -9,7 +9,7 @@ edition = "2021"
 bevy = { version = "0.13.0", features = ["wayland"] }
 bevy-inspector-egui = "0.23.2"
 bevy_cursor = { version = "0.3.0", features = ["2d"] }
-bevy_xpbd_2d = "0.4.2"
+bevy_rapier2d = "0.25.0"
 rand = "0.8.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
