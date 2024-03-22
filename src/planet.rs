@@ -80,12 +80,12 @@ impl BallBundle {
             ball,
             rigid_body: RigidBody::Dynamic,
             gravity: ExternalForce::default(),
-            friction: Friction::new(1.0),
+            friction: Friction::new(0.),
             restitution: Restitution::new(0.1),
-            collider: Collider::ball(0.53),
+            collider: Collider::ball(0.54),
             collision: ActiveEvents::COLLISION_EVENTS,
             velocity: Velocity::default(),
-            mass: AdditionalMassProperties::Mass(150.),
+            mass: AdditionalMassProperties::Mass(properites.properties().2 as f32 * 100.0),
             damping: Damping {
                 linear_damping: 50.,
                 angular_damping: 50000.,
@@ -112,12 +112,12 @@ impl BallBundle {
             ball,
             rigid_body: RigidBody::KinematicVelocityBased,
             gravity: ExternalForce::default(),
-            friction: Friction::new(1.0),
+            friction: Friction::new(0.),
             restitution: Restitution::new(0.1),
-            collider: Collider::ball(0.53),
+            collider: Collider::ball(0.54),
             collision: ActiveEvents::COLLISION_EVENTS,
             velocity: Velocity::default(),
-            mass: AdditionalMassProperties::Mass(150.),
+            mass: AdditionalMassProperties::Mass(properites.properties().2 as f32 * 100.0),
             damping: Damping {
                 linear_damping: 50.,
                 angular_damping: 50000.,
@@ -157,17 +157,17 @@ pub struct Ball(pub BallType);
 impl BallType {
     pub fn properties(&self) -> (f32, String, u64) {
         match self {
-            BallType::ONE => (40., "moon.png".to_string(), 1),
-            BallType::TWO => (50., "earth.png".to_string(), 2),
-            BallType::THREE => (60., "mars.png".to_string(), 4),
-            BallType::FOUR => (90., "snow.png".to_string(), 8),
-            BallType::FIVE => (110., "toxic.png".to_string(), 16),
-            BallType::SIX => (130., "lava.png".to_string(), 32),
-            BallType::SEVEN => (160., "milk.png".to_string(), 64),
-            BallType::EIGHT => (190., "green.png".to_string(), 128),
-            BallType::NINE => (220., "emma.png".to_string(), 258),
-            BallType::TEN => (250., "sand.png".to_string(), 512),
-            BallType::ELEVEN => (280., "sun.png".to_string(), 1024),
+            BallType::ONE => (30., "moon.png".to_string(), 2),
+            BallType::TWO => (37., "earth.png".to_string(), 3),
+            BallType::THREE => (47. , "mars.png".to_string(), 4),
+            BallType::FOUR => (60., "snow.png".to_string(), 8),
+            BallType::FIVE => (75., "toxic.png".to_string(), 16),
+            BallType::SIX => (95., "lava.png".to_string(), 32),
+            BallType::SEVEN => (120., "milk.png".to_string(), 64),
+            BallType::EIGHT => (151., "green.png".to_string(), 128),
+            BallType::NINE => (190., "emma.png".to_string(), 258),
+            BallType::TEN => (240., "sand.png".to_string(), 512),
+            BallType::ELEVEN => (302., "sun.png".to_string(), 1024),
         }
     }
 
@@ -248,14 +248,16 @@ pub fn fusion(
 //     }
 // }
 
-const GRAVITY_FORCE: f32 = 15000.0;
+const GRAVITY_FORCE: f32 = 100.0;
 
 pub fn gravity(
-    mut query: Query<(&mut ExternalForce, &Transform), With<Ball>>,
+    mut query: Query<(&mut ExternalForce, &Transform, &AdditionalMassProperties), With<Ball>>,
 ) {
-    for (mut gravity, trasform) in &mut query {
-        let mut dir = Vec3::default() - trasform.translation;
-        gravity.force = dir.xy() * GRAVITY_FORCE;
+    for (mut gravity, trasform, mass) in &mut query {
+        if let &AdditionalMassProperties::Mass(mass) = mass {
+            let mut dir = Vec3::default() - trasform.translation;
+            gravity.force = dir.xy() * GRAVITY_FORCE * mass;
+        }
     }
 }
 

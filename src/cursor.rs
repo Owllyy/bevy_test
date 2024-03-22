@@ -96,7 +96,7 @@ pub fn cursor_tracking(
     if let Some(cursor) = cursor.world_position() {
         for mut transform in &mut query {
             transform.translation = (transform.translation
-                + (cursor.extend(0.) * time.delta_seconds() * TRACKING_SPEED))
+                + ((cursor.extend(0.).normalize_or_zero() * 350.) * time.delta_seconds() * TRACKING_SPEED))
                 .normalize_or_zero()
                 * ((CURSOR_ORBIT + transform.translation.length() * 4.) / 5.);
         }

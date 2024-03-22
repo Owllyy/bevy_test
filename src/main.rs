@@ -53,11 +53,12 @@ fn main() {
         // .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
         // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default()
         .add_systems(Startup, (setup, planet_order))
+        .add_systems(FixedUpdate, (gravity, fusion,fusioning,growing, cursor_tracking, cursor_cooldown, game_over).chain().run_if(in_state(AppState::Playing)))
         .add_systems(
             Update,
-            (spawn_ball, gravity, fusion,fusioning,growing, cursor_tracking, score_update, game_over, cursor_cooldown).chain().run_if(in_state(AppState::Playing)),
+            (spawn_ball, score_update).chain().run_if(in_state(AppState::Playing)),
         )
-        .add_systems(Update, (best_score_update, cursor_tracking, gravity, restart).chain().run_if(in_state(AppState::GameOver)))
+        .add_systems(Update, (best_score_update, cursor_tracking, restart, fusioning, growing).chain().run_if(in_state(AppState::GameOver)))
         .run();
 }
 

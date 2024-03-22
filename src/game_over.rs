@@ -6,6 +6,9 @@ use crate::{cursor::CursorCooldown, planet::Ball, score::{best_score_update, Bes
 #[derive(Component)]
 pub struct GameOver;
 
+#[derive(Component)]
+pub struct GameOverCooldown(f32);
+
 #[derive(Bundle)]
 pub struct GameOverText {
     pub game_over: GameOver,
@@ -34,16 +37,13 @@ impl Default for GameOverText {
 
 pub fn game_over(
     mut commands: Commands,
-    mut cooldown: Query<(), With<CursorCooldown>>,
-    query: Query<&mut Transform, With<Ball>>,
+    mut cooldown: Query<(), With<GameOverCooldown>>,
+    query: Query<(Entity, &mut Transform), With<Ball>>,
     mut state: ResMut<NextState<AppState>>,
 ) {
-    // wait for the fall of the planet
-    if cooldown.get_single().is_ok() {
-        return ;
-    }
     for ball in query.iter() {
         if ball.translation.length() > 350. {
+            commands
             println!("Fail {}", ball.translation.length());
             commands.spawn(GameOverText::default());
             state.set(AppState::GameOver);
